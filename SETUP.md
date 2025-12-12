@@ -15,6 +15,23 @@
 
 ## 2. Slack App Setup
 
+### Option A: Using App Manifest (Recommended - Easier!)
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click "Create New App"
+2. Choose "From an app manifest"
+3. Select your workspace
+4. Copy the contents of `slack-manifest.yaml` from this repository
+5. Paste it into the YAML tab
+6. **IMPORTANT**: Before creating, update the `request_url` fields:
+   - Replace `https://your-domain.vercel.app` with your actual Vercel domain
+   - Or leave as-is and update later in step 4 of Deployment
+7. Click "Create"
+8. Go to "Install App" and click "Install to Workspace"
+9. Copy your "Bot User OAuth Token" from "OAuth & Permissions" (starts with `xoxb-`)
+10. Copy your "Signing Secret" from "Basic Information"
+
+### Option B: Manual Setup
+
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
 2. Choose "From scratch" and give it a name
 3. Under "OAuth & Permissions", add these Bot Token Scopes:
@@ -39,12 +56,12 @@
 6. Under "App Home":
    - Enable Home Tab
 
-7. **Install the app to your workspace**:
+7. Install the app to your workspace:
    - Go to "Install App" in the sidebar
    - Click "Install to Workspace"
    - Authorize the app
 
-8. **Get your credentials**:
+8. Get your credentials:
    - Under "OAuth & Permissions", copy your "Bot User OAuth Token" (starts with `xoxb-`)
    - Under "Basic Information", copy your "Signing Secret"
 

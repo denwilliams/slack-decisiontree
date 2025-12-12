@@ -38,7 +38,9 @@ npm install
 cp .env.example .env.local
 ```
 
-3. Configure your Slack app (see [SETUP.md](./SETUP.md) for detailed instructions)
+3. Configure your Slack app:
+   - Use `slack-manifest.yaml` for easy import, OR
+   - Follow manual setup in [SETUP.md](./SETUP.md)
 
 4. Push database schema:
 ```bash
@@ -97,6 +99,8 @@ vercel
 │   ├── slack.ts               # Slack utilities
 │   └── blocks.ts              # Slack Block Kit builders
 ├── .env.example               # Environment variables template
+├── slack-manifest.yaml        # Slack app manifest for easy import
+├── .nvmrc                     # Node version configuration
 └── README.md                  # This file
 ```
 
