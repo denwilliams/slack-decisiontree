@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { slackClient, verifySlackRequest } from '@/lib/slack';
 import { buildHomeView, buildDecisionView, buildAnswerView } from '@/lib/blocks';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 const app = new Hono().basePath('/api');
 
