@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 18+ installed
+- Node.js 24+ installed
 - A Slack workspace where you have admin access
 - A Neon (or PostgreSQL) database account
 - A Vercel account (for deployment)

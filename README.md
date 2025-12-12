@@ -22,7 +22,7 @@ Build decision tree workflows in Slack and run them anywhere.
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 24 or higher
 - A Slack workspace
 - A Neon database (or any PostgreSQL database)
 
