@@ -10,12 +10,13 @@ Build decision tree workflows in Slack and run them anywhere.
 
 ## Tech Stack
 
-- Next.js 14 (App Router) - run on Vercel
+- Next.js 16 (App Router) - run on Vercel
+- React 19
 - Hono with Next.js for API routes
 - Neon serverless Postgres for storage
 - Drizzle ORM for database management
 - Tailwind CSS for styling
-- Slack Web API for integration
+- Slack Web API (single workspace)
 
 ## Quick Start
 
@@ -71,12 +72,13 @@ vercel
 
 ## Features
 
-- ✅ OAuth 2.0 installation flow
+- ✅ Single workspace deployment (no OAuth complexity)
 - ✅ Home tab management interface
 - ✅ Interactive decision tree builder
 - ✅ Real-time decision tree navigation
 - ✅ Session tracking
 - ✅ Serverless database integration
+- ✅ Edge runtime for optimal performance
 
 ## Project Structure
 

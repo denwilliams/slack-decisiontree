@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Node.js 18+ installed
-- A Slack workspace where you can install apps
+- A Slack workspace where you have admin access
 - A Neon (or PostgreSQL) database account
 - A Vercel account (for deployment)
 
@@ -31,7 +31,6 @@
    - Add your Request URL: `https://your-domain.vercel.app/api/slack/events`
    - Subscribe to bot events:
      - `app_home_opened`
-     - `message.im`
 
 5. Under "Interactivity & Shortcuts":
    - Enable Interactivity
@@ -39,12 +38,15 @@
 
 6. Under "App Home":
    - Enable Home Tab
-   - Enable Messages Tab
 
-7. Under "Basic Information":
-   - Copy your "Client ID"
-   - Copy your "Client Secret"
-   - Copy your "Signing Secret"
+7. **Install the app to your workspace**:
+   - Go to "Install App" in the sidebar
+   - Click "Install to Workspace"
+   - Authorize the app
+
+8. **Get your credentials**:
+   - Under "OAuth & Permissions", copy your "Bot User OAuth Token" (starts with `xoxb-`)
+   - Under "Basic Information", copy your "Signing Secret"
 
 ## 3. Local Development
 
@@ -57,10 +59,8 @@
 3. Create `.env.local` file:
    ```
    DATABASE_URL=your_neon_connection_string
-   SLACK_CLIENT_ID=your_client_id
-   SLACK_CLIENT_SECRET=your_client_secret
+   SLACK_BOT_TOKEN=xoxb-your-bot-token
    SLACK_SIGNING_SECRET=your_signing_secret
-   NEXT_PUBLIC_SLACK_CLIENT_ID=your_client_id
    ```
 
 4. Push database schema:
@@ -93,20 +93,12 @@
 
 3. Add environment variables in Vercel dashboard:
    - `DATABASE_URL`
-   - `SLACK_CLIENT_ID`
-   - `SLACK_CLIENT_SECRET`
+   - `SLACK_BOT_TOKEN`
    - `SLACK_SIGNING_SECRET`
-   - `NEXT_PUBLIC_SLACK_CLIENT_ID`
 
 4. Update Slack app's Request URLs with your Vercel domain
 
-## 5. Install to Workspace
-
-1. Visit your deployed app's homepage
-2. Click "Add to Slack"
-3. Authorize the app
-
-## 6. Usage
+## 5. Usage
 
 1. Open Slack and go to the app's Home tab
 2. Click "Create New Decision Tree"

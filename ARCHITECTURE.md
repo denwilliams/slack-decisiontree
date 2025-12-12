@@ -2,33 +2,23 @@
 
 ## Overview
 
-This application is built with Next.js and uses Hono for API routing. It integrates with Slack to provide decision tree workflows.
+This application is built with Next.js 16 and uses Hono for API routing. It integrates with Slack to provide decision tree workflows for a single workspace.
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14 (App Router), React, Tailwind CSS
+- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS
 - **API**: Hono (edge runtime compatible)
 - **Database**: Neon Serverless PostgreSQL with Drizzle ORM
-- **Slack Integration**: Slack Web API & OAuth
+- **Slack Integration**: Slack Web API (single workspace)
 - **Deployment**: Vercel (Edge Functions)
 
 ## Database Schema
 
 ### Tables
 
-#### `workspaces`
-Stores Slack workspace installations
-- `id`: UUID (primary key)
-- `teamId`: Slack team ID (unique)
-- `teamName`: Workspace name
-- `accessToken`: OAuth access token
-- `botUserId`: Bot user ID
-- Timestamps
-
 #### `decisionTrees`
 Stores decision tree definitions
 - `id`: UUID (primary key)
-- `workspaceId`: Foreign key to workspaces
 - `name`: Tree name
 - `description`: Optional description
 - `isActive`: Whether the tree is active
@@ -70,23 +60,16 @@ Active user sessions through a decision tree
 
 All routes are handled by Hono in `/app/api/[[...route]]/route.ts`:
 
-- `GET /api/slack/oauth` - OAuth callback handler
 - `POST /api/slack/events` - Slack events (app_home_opened, etc.)
 - `POST /api/slack/interactions` - Interactive components (buttons, modals)
 - `GET /api/health` - Health check endpoint
 
 ## Slack Integration Flow
 
-### OAuth Installation
-1. User clicks "Add to Slack"
-2. Slack redirects to `/api/slack/oauth` with code
-3. App exchanges code for access token
-4. Workspace data saved to database
-
 ### Home Tab
 1. User opens app home tab
 2. Slack sends `app_home_opened` event
-3. App fetches user's decision trees
+3. App fetches all decision trees from database
 4. App publishes home view with tree list
 
 ### Decision Tree Execution
@@ -98,9 +81,8 @@ All routes are handled by Hono in `/app/api/[[...route]]/route.ts`:
 ## Key Components
 
 ### `/lib/slack.ts`
-- Slack client utilities
-- Request verification
-- Token management
+- Slack client singleton (using bot token from env)
+- Request verification using signing secret
 
 ### `/lib/blocks.ts`
 - Slack Block Kit builders
@@ -118,6 +100,10 @@ All routes are handled by Hono in `/app/api/[[...route]]/route.ts`:
 ## Security
 
 - All Slack requests are verified using signing secret
-- OAuth tokens stored securely in database
-- Environment variables for sensitive data
+- Bot token stored securely in environment variables
+- No OAuth flow - single workspace deployment
 - Edge runtime for improved security and performance
+
+## Single Workspace Design
+
+This app is designed for deployment to a single Slack workspace. The bot token is configured via environment variables, eliminating the need for OAuth flows and workspace management. This makes the app simpler to deploy and maintain while providing all the core decision tree functionality.

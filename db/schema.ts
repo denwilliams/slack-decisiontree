@@ -1,18 +1,7 @@
 import { pgTable, text, timestamp, uuid, jsonb, boolean } from 'drizzle-orm/pg-core';
 
-export const workspaces = pgTable('workspaces', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  teamId: text('team_id').notNull().unique(),
-  teamName: text('team_name').notNull(),
-  accessToken: text('access_token').notNull(),
-  botUserId: text('bot_user_id').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
 export const decisionTrees = pgTable('decision_trees', {
   id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description'),
   isActive: boolean('is_active').default(true).notNull(),

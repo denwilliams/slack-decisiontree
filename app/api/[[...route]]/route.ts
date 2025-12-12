@@ -1,57 +1,14 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/vercel';
 import { db } from '@/db';
-import { workspaces, decisionTrees, treeNodes, nodeOptions, treeSessions } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-import { getSlackClient, verifySlackRequest } from '@/lib/slack';
+import { decisionTrees, treeNodes, nodeOptions } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { slackClient, verifySlackRequest } from '@/lib/slack';
 import { buildHomeView, buildDecisionView, buildAnswerView } from '@/lib/blocks';
-import { WebClient } from '@slack/web-api';
 
 export const runtime = 'edge';
 
 const app = new Hono().basePath('/api');
-
-// OAuth callback
-app.get('/slack/oauth', async (c) => {
-  const code = c.req.query('code');
-
-  if (!code) {
-    return c.text('Missing code', 400);
-  }
-
-  try {
-    const client = new WebClient();
-    const result = await client.oauth.v2.access({
-      client_id: process.env.SLACK_CLIENT_ID!,
-      client_secret: process.env.SLACK_CLIENT_SECRET!,
-      code,
-    });
-
-    if (!result.team || !result.access_token) {
-      return c.text('OAuth failed', 400);
-    }
-
-    await db.insert(workspaces).values({
-      teamId: result.team.id!,
-      teamName: result.team.name!,
-      accessToken: result.access_token,
-      botUserId: result.bot_user_id!,
-    }).onConflictDoUpdate({
-      target: workspaces.teamId,
-      set: {
-        teamName: result.team.name!,
-        accessToken: result.access_token,
-        botUserId: result.bot_user_id!,
-        updatedAt: new Date(),
-      },
-    });
-
-    return c.html('<html><body><h1>✅ Installation successful!</h1><p>You can close this window.</p></body></html>');
-  } catch (error) {
-    console.error('OAuth error:', error);
-    return c.text('OAuth error', 500);
-  }
-});
 
 // Slack events endpoint
 app.post('/slack/events', async (c) => {
@@ -77,26 +34,11 @@ app.post('/slack/events', async (c) => {
 
   // Handle app_home_opened event
   if (payload.event?.type === 'app_home_opened') {
-    const teamId = payload.team_id;
     const userId = payload.event.user;
 
-    const client = await getSlackClient(teamId);
-    if (!client) {
-      return c.text('Workspace not found', 404);
-    }
+    const trees = await db.select().from(decisionTrees);
 
-    const [workspace] = await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.teamId, teamId))
-      .limit(1);
-
-    const trees = await db
-      .select()
-      .from(decisionTrees)
-      .where(eq(decisionTrees.workspaceId, workspace.id));
-
-    await client.views.publish({
+    await slackClient.views.publish({
       user_id: userId,
       view: {
         type: 'home',
@@ -113,17 +55,11 @@ app.post('/slack/interactions', async (c) => {
   const body = await c.req.text();
   const payload = JSON.parse(new URLSearchParams(body).get('payload')!);
 
-  const teamId = payload.team?.id || payload.user.team_id;
   const userId = payload.user.id;
-
-  const client = await getSlackClient(teamId);
-  if (!client) {
-    return c.text('Workspace not found', 404);
-  }
 
   // Handle create tree action
   if (payload.type === 'block_actions' && payload.actions[0]?.action_id === 'create_tree') {
-    await client.views.open({
+    await slackClient.views.open({
       trigger_id: payload.trigger_id,
       view: {
         type: 'modal',
@@ -181,14 +117,7 @@ app.post('/slack/interactions', async (c) => {
     const name = payload.view.state.values.name.name_input.value;
     const description = payload.view.state.values.description.description_input.value;
 
-    const [workspace] = await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.teamId, teamId))
-      .limit(1);
-
     await db.insert(decisionTrees).values({
-      workspaceId: workspace.id,
       name,
       description,
       createdBy: userId,
@@ -229,7 +158,7 @@ app.post('/slack/interactions', async (c) => {
       }
 
       if (channelId && messageTs) {
-        await client.chat.update({
+        await slackClient.chat.update({
           channel: channelId,
           ts: messageTs,
           blocks,
