@@ -61,9 +61,8 @@ app.post('/slack/events', async (c) => {
   // Handle function execution (new Slack functions API)
   if (payload.event?.type === 'function_executed') {
     try {
-      console.log('Function executed event received:', JSON.stringify(payload.event, null, 2));
+      console.log('Full function_executed payload:', JSON.stringify(payload, null, 2));
 
-      const functionData = payload.event.function;
       const inputs = payload.event.inputs;
       const treeId = inputs?.tree_id;
       const sendTo = inputs?.send_to || 'workflow_user';
@@ -113,11 +112,18 @@ app.post('/slack/events', async (c) => {
         blocks = buildDecisionView(rootNode, options);
       }
 
-      // Determine where to send the message
-      // For functions, we need to get the user from the event
-      const channel = payload.event.user_id || payload.event.bot_access_token;
+      // Determine where to send the message - try multiple possible locations for user ID
+      const channel = payload.event.user_id
+        || payload.event.function?.user_id
+        || payload.event.workflow?.user_id
+        || payload.user?.id;
 
       console.log('Posting to channel/user:', channel);
+
+      if (!channel) {
+        console.error('Could not determine user/channel from event. Available fields:', Object.keys(payload.event));
+        return c.json({ ok: true });
+      }
 
       // Post the first node
       await slackClient.chat.postMessage({
