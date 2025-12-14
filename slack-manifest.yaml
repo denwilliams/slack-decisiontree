@@ -10,6 +10,9 @@ features:
   bot_user:
     display_name: Decision Tree Bot
     always_online: true
+  workflow_steps:
+    - name: Run Decision Tree
+      callback_id: run_decision_tree_workflow
 oauth_config:
   scopes:
     bot:
@@ -20,11 +23,13 @@ oauth_config:
       - im:read
       - im:write
       - users:read
+      - workflow.steps:execute
 settings:
   event_subscriptions:
     request_url: https://your-domain.vercel.app/api/slack/events
     bot_events:
       - app_home_opened
+      - workflow_step_execute
   interactivity:
     is_enabled: true
     request_url: https://your-domain.vercel.app/api/slack/interactions
