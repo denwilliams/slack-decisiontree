@@ -54,14 +54,29 @@ export function buildHomeView(trees: any[]): KnownBlock[] {
           type: 'mrkdwn',
           text: `*${tree.name}*\n${tree.description || 'No description'}`,
         },
-        accessory: {
-          type: 'button',
-          text: {
-            type: 'plain_text',
-            text: 'Edit',
+      });
+      blocks.push({
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '▶️ Run',
+            },
+            action_id: `run_tree_${tree.id}`,
+            style: 'primary',
+            value: tree.id,
           },
-          action_id: `edit_tree_${tree.id}`,
-        },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: 'Edit',
+            },
+            action_id: `edit_tree_${tree.id}`,
+          },
+        ],
       });
     });
   }
