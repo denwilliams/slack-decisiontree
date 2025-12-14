@@ -42,3 +42,12 @@ export const treeSessions = pgTable('tree_sessions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const editTokens = pgTable('edit_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  token: text('token').notNull().unique(),
+  treeId: uuid('tree_id').notNull().references(() => decisionTrees.id, { onDelete: 'cascade' }),
+  createdBy: text('created_by').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

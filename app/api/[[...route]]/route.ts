@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/vercel';
 import { db } from '@/db';
-import { decisionTrees, treeNodes, nodeOptions } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { decisionTrees, treeNodes, nodeOptions, editTokens } from '@/db/schema';
+import { eq, and, gt } from 'drizzle-orm';
 import { slackClient, verifySlackRequest } from '@/lib/slack';
 import { buildHomeView, buildDecisionView, buildAnswerView, buildTreeEditorView, buildNodeEditorView } from '@/lib/blocks';
+import { randomBytes } from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -202,6 +203,42 @@ app.post('/slack/interactions', async (c) => {
           },
         });
       }
+    }
+  }
+
+  // Handle "Edit in Browser" button
+  if (payload.type === 'block_actions' && payload.actions[0]?.action_id === 'edit_in_browser') {
+    const treeId = payload.view?.callback_id?.replace('tree_editor_', '');
+
+    if (treeId) {
+      // Generate a secure random token
+      const token = randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+      // Store the token in the database
+      await db.insert(editTokens).values({
+        token,
+        treeId,
+        createdBy: userId,
+        expiresAt,
+      });
+
+      // Send the URL to the user via DM
+      const editorUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app'}/edit/${token}`;
+
+      await slackClient.chat.postMessage({
+        channel: userId,
+        text: `Here's your temporary editor link for this decision tree:\n\n${editorUrl}\n\n⏱️ This link expires in 1 hour.`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `🌐 *Web Editor Link*\n\nClick the link below to edit your decision tree in the browser:\n\n<${editorUrl}|Open Editor>\n\n⏱️ _This link expires in 1 hour_`,
+            },
+          },
+        ],
+      });
     }
   }
 
@@ -965,6 +1002,293 @@ app.post('/slack/interactions', async (c) => {
   return c.json({});
 });
 
+// Helper function to validate edit token
+async function validateToken(token: string) {
+  const [editToken] = await db
+    .select()
+    .from(editTokens)
+    .where(
+      and(
+        eq(editTokens.token, token),
+        gt(editTokens.expiresAt, new Date())
+      )
+    )
+    .limit(1);
+
+  return editToken;
+}
+
+// Web Editor API Endpoints
+
+// Get tree data by token
+app.get('/editor/:token', async (c) => {
+  const token = c.req.param('token');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const [tree] = await db
+    .select()
+    .from(decisionTrees)
+    .where(eq(decisionTrees.id, editToken.treeId))
+    .limit(1);
+
+  if (!tree) {
+    return c.json({ error: 'Tree not found' }, 404);
+  }
+
+  const nodes = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.treeId, tree.id));
+
+  const allOptions = await db
+    .select()
+    .from(nodeOptions);
+
+  const options = allOptions.filter((opt) =>
+    nodes.some((node) => node.id === opt.nodeId)
+  );
+
+  return c.json({
+    tree,
+    nodes,
+    options,
+    expiresAt: editToken.expiresAt,
+  });
+});
+
+// Update tree info
+app.put('/editor/:token', async (c) => {
+  const token = c.req.param('token');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const body = await c.req.json();
+  const { name, description } = body;
+
+  await db
+    .update(decisionTrees)
+    .set({
+      name,
+      description,
+      updatedAt: new Date(),
+    })
+    .where(eq(decisionTrees.id, editToken.treeId));
+
+  return c.json({ success: true });
+});
+
+// Create a new node
+app.post('/editor/:token/nodes', async (c) => {
+  const token = c.req.param('token');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const body = await c.req.json();
+  const { nodeType, title, content } = body;
+
+  const [newNode] = await db
+    .insert(treeNodes)
+    .values({
+      treeId: editToken.treeId,
+      nodeType,
+      title,
+      content: content || null,
+    })
+    .returning();
+
+  return c.json(newNode);
+});
+
+// Update a node
+app.put('/editor/:token/nodes/:nodeId', async (c) => {
+  const token = c.req.param('token');
+  const nodeId = c.req.param('nodeId');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const body = await c.req.json();
+  const { nodeType, title, content } = body;
+
+  // Verify node belongs to this tree
+  const [node] = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.id, nodeId))
+    .limit(1);
+
+  if (!node || node.treeId !== editToken.treeId) {
+    return c.json({ error: 'Node not found' }, 404);
+  }
+
+  await db
+    .update(treeNodes)
+    .set({
+      nodeType,
+      title,
+      content,
+      updatedAt: new Date(),
+    })
+    .where(eq(treeNodes.id, nodeId));
+
+  return c.json({ success: true });
+});
+
+// Delete a node
+app.delete('/editor/:token/nodes/:nodeId', async (c) => {
+  const token = c.req.param('token');
+  const nodeId = c.req.param('nodeId');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  // Verify node belongs to this tree
+  const [node] = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.id, nodeId))
+    .limit(1);
+
+  if (!node || node.treeId !== editToken.treeId) {
+    return c.json({ error: 'Node not found' }, 404);
+  }
+
+  await db.delete(treeNodes).where(eq(treeNodes.id, nodeId));
+
+  return c.json({ success: true });
+});
+
+// Create an option
+app.post('/editor/:token/nodes/:nodeId/options', async (c) => {
+  const token = c.req.param('token');
+  const nodeId = c.req.param('nodeId');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const body = await c.req.json();
+  const { label, nextNodeId } = body;
+
+  // Verify node belongs to this tree
+  const [node] = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.id, nodeId))
+    .limit(1);
+
+  if (!node || node.treeId !== editToken.treeId) {
+    return c.json({ error: 'Node not found' }, 404);
+  }
+
+  const [newOption] = await db
+    .insert(nodeOptions)
+    .values({
+      nodeId,
+      label,
+      nextNodeId: nextNodeId || null,
+    })
+    .returning();
+
+  return c.json(newOption);
+});
+
+// Update an option
+app.put('/editor/:token/options/:optionId', async (c) => {
+  const token = c.req.param('token');
+  const optionId = c.req.param('optionId');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const body = await c.req.json();
+  const { label, nextNodeId } = body;
+
+  // Verify option belongs to a node in this tree
+  const [option] = await db
+    .select()
+    .from(nodeOptions)
+    .where(eq(nodeOptions.id, optionId))
+    .limit(1);
+
+  if (!option) {
+    return c.json({ error: 'Option not found' }, 404);
+  }
+
+  const [node] = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.id, option.nodeId))
+    .limit(1);
+
+  if (!node || node.treeId !== editToken.treeId) {
+    return c.json({ error: 'Option not found' }, 404);
+  }
+
+  await db
+    .update(nodeOptions)
+    .set({
+      label,
+      nextNodeId: nextNodeId || null,
+    })
+    .where(eq(nodeOptions.id, optionId));
+
+  return c.json({ success: true });
+});
+
+// Delete an option
+app.delete('/editor/:token/options/:optionId', async (c) => {
+  const token = c.req.param('token');
+  const optionId = c.req.param('optionId');
+  const editToken = await validateToken(token);
+
+  if (!editToken) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  // Verify option belongs to a node in this tree
+  const [option] = await db
+    .select()
+    .from(nodeOptions)
+    .where(eq(nodeOptions.id, optionId))
+    .limit(1);
+
+  if (!option) {
+    return c.json({ error: 'Option not found' }, 404);
+  }
+
+  const [node] = await db
+    .select()
+    .from(treeNodes)
+    .where(eq(treeNodes.id, option.nodeId))
+    .limit(1);
+
+  if (!node || node.treeId !== editToken.treeId) {
+    return c.json({ error: 'Option not found' }, 404);
+  }
+
+  await db.delete(nodeOptions).where(eq(nodeOptions.id, optionId));
+
+  return c.json({ success: true });
+});
+
 // Health check
 app.get('/health', (c) => {
   return c.json({ status: 'ok' });
@@ -972,3 +1296,5 @@ app.get('/health', (c) => {
 
 export const GET = handle(app);
 export const POST = handle(app);
+export const PUT = handle(app);
+export const DELETE = handle(app);
