@@ -16,6 +16,8 @@ app.post('/slack/events', async (c) => {
   const body = await c.req.text();
   const payload = JSON.parse(body);
 
+  console.log('Received event type:', payload.type, payload.event?.type);
+
   // Handle URL verification
   if (payload.type === 'url_verification') {
     return c.json({ challenge: payload.challenge });
@@ -50,89 +52,112 @@ app.post('/slack/events', async (c) => {
 
   // Handle workflow step execution
   if (payload.event?.type === 'workflow_step_execute') {
-    const workflowStep = payload.event.workflow_step;
-    const treeId = workflowStep.inputs.tree_id.value;
-    const sendTo = workflowStep.inputs.send_to.value;
+    try {
+      console.log('Workflow step execute received:', JSON.stringify(payload.event.workflow_step, null, 2));
 
-    // Get all nodes for this tree
-    const allNodes = await db
-      .select()
-      .from(treeNodes)
-      .where(eq(treeNodes.treeId, treeId));
+      const workflowStep = payload.event.workflow_step;
+      const treeId = workflowStep.inputs.tree_id.value;
+      const sendTo = workflowStep.inputs.send_to.value;
 
-    if (allNodes.length === 0) {
-      // Complete the workflow step with failure
-      await slackClient.workflows.stepFailed({
-        workflow_step_execute_id: workflowStep.workflow_step_execute_id,
-        error: {
-          message: 'This decision tree has no nodes yet.',
-        },
-      });
-      return c.json({ ok: true });
-    }
+      console.log('Tree ID:', treeId, 'Send to:', sendTo);
 
-    // Get all options to find which nodes are referenced as nextNodeId
-    const allOptions = await db
-      .select()
-      .from(nodeOptions);
-
-    // Find the root node (not referenced by any option as nextNodeId)
-    const referencedNodeIds = new Set(allOptions.map(opt => opt.nextNodeId).filter(Boolean));
-    const rootNode = allNodes.find(node => !referencedNodeIds.has(node.id));
-
-    if (!rootNode) {
-      await slackClient.workflows.stepFailed({
-        workflow_step_execute_id: workflowStep.workflow_step_execute_id,
-        error: {
-          message: 'Could not find a starting node for this tree.',
-        },
-      });
-      return c.json({ ok: true });
-    }
-
-    // Build the appropriate view based on node type
-    let blocks;
-    if (rootNode.nodeType === 'answer') {
-      blocks = buildAnswerView(rootNode);
-    } else {
-      const options = await db
+      // Get all nodes for this tree
+      const allNodes = await db
         .select()
-        .from(nodeOptions)
-        .where(eq(nodeOptions.nodeId, rootNode.id));
+        .from(treeNodes)
+        .where(eq(treeNodes.treeId, treeId));
 
-      blocks = buildDecisionView(rootNode, options);
+      if (allNodes.length === 0) {
+        // Complete the workflow step with failure
+        await slackClient.workflows.stepFailed({
+          workflow_step_execute_id: workflowStep.workflow_step_execute_id,
+          error: {
+            message: 'This decision tree has no nodes yet.',
+          },
+        });
+        return c.json({ ok: true });
+      }
+
+      // Get all options to find which nodes are referenced as nextNodeId
+      const allOptions = await db
+        .select()
+        .from(nodeOptions);
+
+      // Find the root node (not referenced by any option as nextNodeId)
+      const referencedNodeIds = new Set(allOptions.map(opt => opt.nextNodeId).filter(Boolean));
+      const rootNode = allNodes.find(node => !referencedNodeIds.has(node.id));
+
+      if (!rootNode) {
+        await slackClient.workflows.stepFailed({
+          workflow_step_execute_id: workflowStep.workflow_step_execute_id,
+          error: {
+            message: 'Could not find a starting node for this tree.',
+          },
+        });
+        return c.json({ ok: true });
+      }
+
+      // Build the appropriate view based on node type
+      let blocks;
+      if (rootNode.nodeType === 'answer') {
+        blocks = buildAnswerView(rootNode);
+      } else {
+        const options = await db
+          .select()
+          .from(nodeOptions)
+          .where(eq(nodeOptions.nodeId, rootNode.id));
+
+        blocks = buildDecisionView(rootNode, options);
+      }
+
+      // Determine where to send the message
+      let channel;
+      if (sendTo === 'workflow_user') {
+        channel = payload.event.workflow_step.workflow_instance_owner;
+      } else {
+        // current_channel - need to get from workflow context
+        channel = payload.event.workflow_step.workflow_instance_owner; // Fallback to user
+      }
+
+      console.log('Posting to channel:', channel);
+
+      // Post the first node
+      await slackClient.chat.postMessage({
+        channel,
+        blocks,
+        text: `Starting decision tree: ${rootNode.title}`,
+      });
+
+      // Get tree name for output
+      const [tree] = await db
+        .select()
+        .from(decisionTrees)
+        .where(eq(decisionTrees.id, treeId))
+        .limit(1);
+
+      // Complete the workflow step
+      await slackClient.workflows.stepCompleted({
+        workflow_step_execute_id: workflowStep.workflow_step_execute_id,
+        outputs: {
+          tree_name: tree?.name || 'Unknown',
+        },
+      });
+
+      console.log('Workflow step completed successfully');
+    } catch (error) {
+      console.error('Workflow step execution error:', error);
+      // Try to fail the step gracefully
+      try {
+        await slackClient.workflows.stepFailed({
+          workflow_step_execute_id: payload.event.workflow_step.workflow_step_execute_id,
+          error: {
+            message: error instanceof Error ? error.message : 'Unknown error occurred',
+          },
+        });
+      } catch (failError) {
+        console.error('Failed to fail workflow step:', failError);
+      }
     }
-
-    // Determine where to send the message
-    let channel;
-    if (sendTo === 'workflow_user') {
-      channel = payload.event.workflow_step.workflow_instance_owner;
-    } else {
-      // current_channel - need to get from workflow context
-      channel = payload.event.workflow_step.workflow_instance_owner; // Fallback to user
-    }
-
-    // Post the first node
-    await slackClient.chat.postMessage({
-      channel,
-      blocks,
-      text: `Starting decision tree: ${rootNode.title}`,
-    });
-
-    // Get tree name for output
-    const [tree] = await db
-      .select()
-      .from(decisionTrees)
-      .where(eq(decisionTrees.id, treeId))
-      .limit(1);
-
-    // Complete the workflow step
-    await slackClient.workflows.stepCompleted({
-      workflow_step_execute_id: workflowStep.workflow_step_execute_id,
-      outputs: {
-        tree_name: tree?.name || 'Unknown',
-      },
-    });
   }
 
   return c.json({ ok: true });
