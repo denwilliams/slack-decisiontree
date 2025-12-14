@@ -14,7 +14,15 @@ const app = new Hono().basePath('/api');
 // Slack events endpoint
 app.post('/slack/events', async (c) => {
   const body = await c.req.text();
-  const payload = JSON.parse(body);
+
+  // Try to parse as form-encoded first (for workflow events), then fall back to JSON
+  let payload;
+  try {
+    const formData = new URLSearchParams(body).get('payload');
+    payload = formData ? JSON.parse(formData) : JSON.parse(body);
+  } catch {
+    payload = JSON.parse(body);
+  }
 
   console.log('Received event type:', payload.type, payload.event?.type);
 
