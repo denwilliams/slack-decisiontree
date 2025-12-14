@@ -13,6 +13,23 @@ features:
   workflow_steps:
     - name: Run Decision Tree
       callback_id: run_decision_tree_workflow
+      input_parameters:
+        - name: tree_id
+          description: The ID of the decision tree to run
+          type: text
+          is_required: true
+        - name: tree_name
+          description: The name of the decision tree
+          type: text
+          is_required: false
+        - name: send_to
+          description: Where to send the decision tree (workflow_user or current_channel)
+          type: text
+          is_required: true
+      output_parameters:
+        - name: tree_name
+          description: The name of the decision tree that was run
+          type: text
 oauth_config:
   scopes:
     bot:
