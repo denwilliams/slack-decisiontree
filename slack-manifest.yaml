@@ -22,8 +22,8 @@ features:
           description: The name of the decision tree
           type: text
           is_required: false
-        - name: send_to
-          description: Where to send the decision tree (workflow_user or current_channel)
+        - name: channel_id
+          description: The channel or user ID to send the decision tree to
           type: text
           is_required: true
       output_parameters:

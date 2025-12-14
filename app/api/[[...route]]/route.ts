@@ -65,12 +65,17 @@ app.post('/slack/events', async (c) => {
 
       const inputs = payload.event.inputs;
       const treeId = inputs?.tree_id;
-      const sendTo = inputs?.send_to || 'workflow_user';
+      const channelId = inputs?.channel_id;
 
-      console.log('Tree ID:', treeId, 'Send to:', sendTo);
+      console.log('Tree ID:', treeId, 'Channel ID:', channelId);
 
       if (!treeId) {
         console.error('No tree_id in function inputs');
+        return c.json({ ok: true });
+      }
+
+      if (!channelId) {
+        console.error('No channel_id in function inputs');
         return c.json({ ok: true });
       }
 
@@ -112,22 +117,11 @@ app.post('/slack/events', async (c) => {
         blocks = buildDecisionView(rootNode, options);
       }
 
-      // Determine where to send the message - try multiple possible locations for user ID
-      const channel = payload.event.user_id
-        || payload.event.function?.user_id
-        || payload.event.workflow?.user_id
-        || payload.user?.id;
-
-      console.log('Posting to channel/user:', channel);
-
-      if (!channel) {
-        console.error('Could not determine user/channel from event. Available fields:', Object.keys(payload.event));
-        return c.json({ ok: true });
-      }
+      console.log('Posting to channel/user:', channelId);
 
       // Post the first node
       await slackClient.chat.postMessage({
-        channel,
+        channel: channelId,
         blocks,
         text: `Starting decision tree: ${rootNode.title}`,
       });
