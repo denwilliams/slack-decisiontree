@@ -104,26 +104,45 @@ app.post('/slack/events', async (c) => {
         return c.json({ ok: true });
       }
 
-      // Build the appropriate view based on node type
-      let blocks;
-      if (rootNode.nodeType === 'answer') {
-        blocks = buildAnswerView(rootNode);
-      } else {
-        const options = await db
-          .select()
-          .from(nodeOptions)
-          .where(eq(nodeOptions.nodeId, rootNode.id));
-
-        blocks = buildDecisionView(rootNode, options);
-      }
+      // Get tree name for display
+      const [tree] = await db
+        .select()
+        .from(decisionTrees)
+        .where(eq(decisionTrees.id, treeId))
+        .limit(1);
 
       console.log('Posting to channel/user:', channelId);
 
-      // Post the first node
+      // Post a message with a button to start the decision tree
+      // We can't open a modal directly from workflow execution (no trigger_id)
+      // So we post a button that will open the modal when clicked
       await slackClient.chat.postMessage({
         channel: channelId,
-        blocks,
-        text: `Starting decision tree: ${rootNode.title}`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*${tree?.name || 'Decision Tree'}*\n${tree?.description || 'Click the button below to start the decision tree.'}`,
+            },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '▶️ Start Decision Tree',
+                },
+                action_id: `run_tree_${treeId}`,
+                style: 'primary',
+                value: treeId,
+              },
+            ],
+          },
+        ],
+        text: `Start decision tree: ${tree?.name}`,
       });
 
       console.log('Function execution completed successfully');
