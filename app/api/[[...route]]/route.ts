@@ -112,6 +112,74 @@ app.post('/slack/interactions', async (c) => {
     });
   }
 
+  // Handle edit tree action
+  if (payload.type === 'block_actions' && payload.actions[0]?.action_id?.startsWith('edit_tree_')) {
+    const treeId = payload.actions[0].action_id.replace('edit_tree_', '');
+
+    const [tree] = await db
+      .select()
+      .from(decisionTrees)
+      .where(eq(decisionTrees.id, treeId))
+      .limit(1);
+
+    if (tree) {
+      await slackClient.views.open({
+        trigger_id: payload.trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'edit_tree_modal',
+          private_metadata: treeId,
+          title: {
+            type: 'plain_text',
+            text: 'Edit Decision Tree',
+          },
+          submit: {
+            type: 'plain_text',
+            text: 'Save',
+          },
+          blocks: [
+            {
+              type: 'input',
+              block_id: 'name',
+              label: {
+                type: 'plain_text',
+                text: 'Name',
+              },
+              element: {
+                type: 'plain_text_input',
+                action_id: 'name_input',
+                initial_value: tree.name,
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Enter tree name',
+                },
+              },
+            },
+            {
+              type: 'input',
+              block_id: 'description',
+              label: {
+                type: 'plain_text',
+                text: 'Description',
+              },
+              optional: true,
+              element: {
+                type: 'plain_text_input',
+                action_id: 'description_input',
+                initial_value: tree.description || '',
+                multiline: true,
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Enter tree description',
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+  }
+
   // Handle tree creation submission
   if (payload.type === 'view_submission' && payload.view.callback_id === 'create_tree_modal') {
     const name = payload.view.state.values.name.name_input.value;
@@ -121,6 +189,43 @@ app.post('/slack/interactions', async (c) => {
       name,
       description,
       createdBy: userId,
+    });
+
+    // Refresh home view to show the new tree
+    const trees = await db.select().from(decisionTrees);
+    await slackClient.views.publish({
+      user_id: userId,
+      view: {
+        type: 'home',
+        blocks: buildHomeView(trees),
+      },
+    });
+
+    return c.json({});
+  }
+
+  // Handle tree edit submission
+  if (payload.type === 'view_submission' && payload.view.callback_id === 'edit_tree_modal') {
+    const treeId = payload.view.private_metadata;
+    const name = payload.view.state.values.name.name_input.value;
+    const description = payload.view.state.values.description.description_input.value;
+
+    await db
+      .update(decisionTrees)
+      .set({
+        name,
+        description,
+      })
+      .where(eq(decisionTrees.id, treeId));
+
+    // Refresh home view to show the updated tree
+    const trees = await db.select().from(decisionTrees);
+    await slackClient.views.publish({
+      user_id: userId,
+      view: {
+        type: 'home',
+        blocks: buildHomeView(trees),
+      },
     });
 
     return c.json({});
