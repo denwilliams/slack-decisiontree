@@ -196,6 +196,15 @@ export function buildTreeEditorView(tree: any, nodes: any[]): any {
         },
         action_id: 'edit_tree_info',
       },
+      {
+        type: 'button',
+        text: {
+          type: 'plain_text',
+          text: '🌐 Edit in Browser',
+        },
+        action_id: 'edit_in_browser',
+        style: 'primary',
+      },
     ],
   });
 
