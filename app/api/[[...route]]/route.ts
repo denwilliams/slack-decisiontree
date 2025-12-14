@@ -58,7 +58,83 @@ app.post('/slack/events', async (c) => {
     });
   }
 
-  // Handle workflow step execution
+  // Handle function execution (new Slack functions API)
+  if (payload.event?.type === 'function_executed') {
+    try {
+      console.log('Function executed event received:', JSON.stringify(payload.event, null, 2));
+
+      const functionData = payload.event.function;
+      const inputs = payload.event.inputs;
+      const treeId = inputs?.tree_id;
+      const sendTo = inputs?.send_to || 'workflow_user';
+
+      console.log('Tree ID:', treeId, 'Send to:', sendTo);
+
+      if (!treeId) {
+        console.error('No tree_id in function inputs');
+        return c.json({ ok: true });
+      }
+
+      // Get all nodes for this tree
+      const allNodes = await db
+        .select()
+        .from(treeNodes)
+        .where(eq(treeNodes.treeId, treeId));
+
+      if (allNodes.length === 0) {
+        console.error('No nodes found for tree:', treeId);
+        return c.json({ ok: true });
+      }
+
+      // Get all options to find which nodes are referenced as nextNodeId
+      const allOptions = await db
+        .select()
+        .from(nodeOptions);
+
+      // Find the root node (not referenced by any option as nextNodeId)
+      const referencedNodeIds = new Set(allOptions.map(opt => opt.nextNodeId).filter(Boolean));
+      const rootNode = allNodes.find(node => !referencedNodeIds.has(node.id));
+
+      if (!rootNode) {
+        console.error('No root node found for tree:', treeId);
+        return c.json({ ok: true });
+      }
+
+      // Build the appropriate view based on node type
+      let blocks;
+      if (rootNode.nodeType === 'answer') {
+        blocks = buildAnswerView(rootNode);
+      } else {
+        const options = await db
+          .select()
+          .from(nodeOptions)
+          .where(eq(nodeOptions.nodeId, rootNode.id));
+
+        blocks = buildDecisionView(rootNode, options);
+      }
+
+      // Determine where to send the message
+      // For functions, we need to get the user from the event
+      const channel = payload.event.user_id || payload.event.bot_access_token;
+
+      console.log('Posting to channel/user:', channel);
+
+      // Post the first node
+      await slackClient.chat.postMessage({
+        channel,
+        blocks,
+        text: `Starting decision tree: ${rootNode.title}`,
+      });
+
+      console.log('Function execution completed successfully');
+    } catch (error) {
+      console.error('Function execution error:', error);
+    }
+
+    return c.json({ ok: true });
+  }
+
+  // Handle workflow step execution (legacy workflow steps API)
   if (payload.event?.type === 'workflow_step_execute') {
     try {
       console.log('Workflow step execute received:', JSON.stringify(payload.event.workflow_step, null, 2));
