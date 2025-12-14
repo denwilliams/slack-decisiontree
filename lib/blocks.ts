@@ -52,7 +52,7 @@ export function buildHomeView(trees: any[]): KnownBlock[] {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${tree.name}*\n${tree.description || 'No description'}`,
+          text: `*${tree.name}*\n${tree.description || 'No description'}\n\`ID: ${tree.id}\``,
         },
       });
       blocks.push({

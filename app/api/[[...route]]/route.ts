@@ -1159,6 +1159,13 @@ app.post('/slack/interactions', async (c) => {
   if (payload.type === 'block_actions' && payload.actions[0]?.action_id?.startsWith('run_tree_')) {
     const treeId = payload.actions[0].value;
 
+    // Get tree info
+    const [tree] = await db
+      .select()
+      .from(decisionTrees)
+      .where(eq(decisionTrees.id, treeId))
+      .limit(1);
+
     // Get all nodes for this tree
     const allNodes = await db
       .select()
@@ -1205,11 +1212,23 @@ app.post('/slack/interactions', async (c) => {
       blocks = buildDecisionView(rootNode, options);
     }
 
-    // Post the first node to the user as a DM
-    await slackClient.chat.postMessage({
-      channel: userId,
-      blocks,
-      text: `Starting decision tree: ${rootNode.title}`,
+    // Open modal with the decision tree
+    await slackClient.views.open({
+      trigger_id: payload.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: `run_tree_modal_${treeId}`,
+        private_metadata: JSON.stringify({ treeId, currentNodeId: rootNode.id }),
+        title: {
+          type: 'plain_text',
+          text: tree?.name || 'Decision Tree',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Close',
+        },
+        blocks,
+      },
     });
 
     return c.json({});
@@ -1220,6 +1239,7 @@ app.post('/slack/interactions', async (c) => {
     const optionId = payload.actions[0].value;
     const channelId = payload.channel?.id;
     const messageTs = payload.message?.ts;
+    const viewId = payload.view?.id;
 
     const [option] = await db
       .select()
@@ -1246,7 +1266,33 @@ app.post('/slack/interactions', async (c) => {
         blocks = buildDecisionView(nextNode, options);
       }
 
-      if (channelId && messageTs) {
+      // Update modal if in modal context, otherwise update message
+      if (viewId) {
+        const metadata = JSON.parse(payload.view.private_metadata || '{}');
+        const [tree] = await db
+          .select()
+          .from(decisionTrees)
+          .where(eq(decisionTrees.id, metadata.treeId))
+          .limit(1);
+
+        await slackClient.views.update({
+          view_id: viewId,
+          view: {
+            type: 'modal',
+            callback_id: `run_tree_modal_${metadata.treeId}`,
+            private_metadata: JSON.stringify({ treeId: metadata.treeId, currentNodeId: nextNode.id }),
+            title: {
+              type: 'plain_text',
+              text: tree?.name || 'Decision Tree',
+            },
+            close: {
+              type: 'plain_text',
+              text: 'Close',
+            },
+            blocks,
+          },
+        });
+      } else if (channelId && messageTs) {
         await slackClient.chat.update({
           channel: channelId,
           ts: messageTs,
